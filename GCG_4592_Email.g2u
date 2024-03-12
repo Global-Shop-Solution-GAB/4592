@@ -1,0 +1,143 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+
+'This project will create an email acknowledgement that will be sent to the customer 
+'when the Script 1 button on the Sales Order Header is clicked.
+'Program runs from Order Header (Order Select 11565) Script 1 11910
+'Coded by: WAW
+'Date: 9/15/2017
+
+'Open Connection
+F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass,300)
+
+'if the user selects an order we want to change the script 1 text
+f.Intrinsic.Control.If(v.Caller.Hook,=,11565)
+	v.Passed.000201.Set("Email Cust.")
+f.Intrinsic.Control.EndIf
+'if the user clicks the script button we want to email the customer
+f.Intrinsic.Control.If(v.Caller.Hook,=,11910)
+	'call the email sub
+	f.Intrinsic.Control.CallSub(email)
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4592_Email.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.Main.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("UnLoad_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+
+'close connection and end the program
+F.ODBC.Connection!conx.Close
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("UnLoad_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4592_Email.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.Unload.End
+
+Program.Sub.Email.Start
+F.Intrinsic.Control.SetErrorHandler("Email_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+
+v.Local..BulkDeclareString(sBody,sSubject,sSql,sSO,sSender,sSenderEmail,sRecip,scustomer,syear,smonth,sday,sduedate)
+v.Local.isender.Declare(long)
+
+'query to see if that customer has an email address in CRM
+v.Local.scustomer.Set(v.Passed.000006)
+
+f.Intrinsic.Control.If(v.Passed.000071,=,"")
+	
+	f.Intrinsic.String.Build("Select EMAIL1, NAME from V_CONTACT where CUST = '{0}'",v.Local.scustomer.Trim,v.Local.ssql)
+	F.ODBC.Connection!conX.OpenLocalRecordsetRO("rst",V.Local.sSQL)
+	f.Intrinsic.Control.If(v.ODBC.conx!rst.EOF,=,TRUE)
+		'if nothing is found inform the user and end the program
+		F.Intrinsic.UI.Msgbox("No email for this customer found in CRM.")
+		f.Intrinsic.Control.CallSub(UNLOAD)
+	f.Intrinsic.Control.Else
+		
+		'get the user's email
+		f.Global.Security.GetUserEmail(v.Caller.User.trim,v.Local.sSenderEmail)
+		'get the user's ID
+		f.Global.Security.GetUserId(v.Caller.User,v.Caller.CompanyCode,v.Local.isender)
+		'get the user's name
+		f.Global.Security.GetUsernameFromID(v.local.isender,v.Local.sSender)
+		f.Intrinsic.String.Split(v.Local.ssender,"*!*",v.Local.ssender)
+		'string the values together
+		f.Intrinsic.String.Build("{0}{1}",v.Local.ssender(1),v.Local.ssenderemail,v.Local.ssender)
+	
+		'create the subject
+		v.Local.ssubject.Set("New Sales Order Created")	
+		v.Local.sduedate.Set(v.passed.000024)
+		'format the date
+		f.Intrinsic.String.Left(v.Local.sduedate,4,v.Local.syear)
+		f.Intrinsic.String.Mid(v.Local.sduedate,5,2,v.Local.smonth)
+		f.Intrinsic.String.Right(v.Local.sduedate,2,v.Local.sday)
+		f.Intrinsic.String.Build("{0}/{1}/{2}",v.Local.smonth,v.Local.sday,v.Local.syear,v.Local.sduedate)
+		'pad the order
+		f.Intrinsic.String.LPad(v.Passed.000003,"0",7,v.Local.sso)
+		f.Intrinsic.String.build("Thank you for your recent order! {1}Sales Order #: {0}{1}Due Date: {2}{1}Saleperson: {3}",v.Local.sso,v.Ambient.NewLine,v.Local.sduedate,v.Passed.000030,v.Local.sbody)
+		'build the recipient
+		f.Intrinsic.String.Build("{0}*!*{1}",v.odbc.conx!rst.FieldValTrim!NAME,v.odbc.conx!rst.FieldValTrim!EMAIL1,v.Local.srecip)	
+	  	'send the email
+	  	F.Global.Messaging.QueueMessage(V.Caller.CompanyCode,V.local.isender,"",v.Local.ssubject,V.local.ssender,v.Local.srecip,V.Local.sbody)
+	f.Intrinsic.Control.EndIf
+	F.ODBC.conX!rst.Close
+f.Intrinsic.Control.Else
+
+	'get the user's email
+	f.Global.Security.GetUserEmail(v.Caller.User.trim,v.Local.sSenderEmail)
+	'get the user's ID
+	f.Global.Security.GetUserId(v.Caller.User,v.Caller.CompanyCode,v.Local.isender)
+	'get the user's name
+	f.Global.Security.GetUsernameFromID(v.local.isender,v.Local.sSender)
+	f.Intrinsic.String.Split(v.Local.ssender,"*!*",v.Local.ssender)
+	'string the values together
+	f.Intrinsic.String.Build("{0}{1}",v.Local.ssender(1),v.Local.ssenderemail,v.Local.ssender)
+
+	'create the subject
+	v.Local.ssubject.Set("New Sales Order Created")	
+	v.Local.sduedate.Set(v.passed.000024)
+	'format the date
+	f.Intrinsic.String.Left(v.Local.sduedate,4,v.Local.syear)
+	f.Intrinsic.String.Mid(v.Local.sduedate,5,2,v.Local.smonth)
+	f.Intrinsic.String.Right(v.Local.sduedate,2,v.Local.sday)
+	f.Intrinsic.String.Build("{0}/{1}/{2}",v.Local.smonth,v.Local.sday,v.Local.syear,v.Local.sduedate)
+	'pad the order
+	f.Intrinsic.String.LPad(v.Passed.000003,"0",7,v.Local.sso)
+	f.Intrinsic.String.build("Thank you for your recent order! {1}Sales Order #: {0}{1}Due Date: {2}{1}Saleperson: {3}",v.Local.sso,v.Ambient.NewLine,v.Local.sduedate,v.Passed.000030,v.Local.sbody)
+
+	'build the recipient
+	f.Intrinsic.String.Build("{0}*!*{1}",v.passed.000001,v.passed.000071,v.Local.srecip)	
+  	'send the email
+  	F.Global.Messaging.QueueMessage(V.Caller.CompanyCode,V.local.isender,"",v.Local.ssubject,V.local.ssender,v.Local.srecip,V.Local.sbody)
+
+f.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Label("Email_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4592_Email.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.callsub(unload)
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.Email.End
